@@ -2,3 +2,5 @@ echo config.json >> .gitignore
 echo token.json >> .gitignore
 echo credentials.json >> .gitignore
 echo registro_clasificaciones.json >> .gitignore
+
+subir_repositorio.ps1
