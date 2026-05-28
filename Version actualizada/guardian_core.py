@@ -6,8 +6,82 @@ import time
 import json
 import tempfile
 import subprocess
+import shutil
+import platform
+import warnings
 from pathlib import Path
 from datetime import datetime
+
+# Silenciar warnings de versiones deprecated de google-api-core
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+# ============================================================
+# SOPORTE MULTIPLATAFORMA PARA BÓVEDA ESPEJO (Linux <-> Windows)
+# ============================================================
+def detectar_entorno_y_ruta(base_path):
+    """
+    Detecta el SO actual y gestiona .guardian_env para que la bóveda
+    sincronizada mantenga la ruta correcta en cada plataforma.
+    Si la ruta del config no existe, busca la bóveda automáticamente.
+    """
+    sistema = platform.system().lower()
+    
+    # Si la ruta existe, usar la lógica normal
+    if os.path.exists(base_path):
+        env_file = Path(base_path) / ".guardian_env"
+        
+        config_local = {}
+        if env_file.exists():
+            try:
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    config_local = json.load(f)
+            except: pass
+        
+        # Actualizar la ruta del sistema actual
+        if sistema == "windows":
+            config_local["windows_path"] = base_path
+        elif sistema == "linux":
+            config_local["linux_path"] = base_path
+        
+        try:
+            with open(env_file, 'w', encoding='utf-8') as f:
+                json.dump(config_local, f, indent=4)
+        except: pass
+        
+        ruta_activa = config_local.get("windows_path" if sistema == "windows" else "linux_path", base_path)
+        print(f"[*] Plataforma: {platform.system()} | Ruta activa: {ruta_activa}")
+        return ruta_activa
+    
+    # AUTO-DETECCIÓN: La ruta no existe, buscar la bóveda automáticamente
+    print(f"[!] Ruta configurada no existe: {base_path}")
+    print(f"[*] Buscando bóveda automaticamente en {os.getcwd()}...")
+    
+    # Buscar carpeta con archivos .md o .obsidian
+    directorio_actual = Path(os.getcwd())
+    
+    # Posibles nombres de subcarpetas de la bóveda
+    posibles_boveda = ["Mobil01", "Bovedamobil01", "vault", "obsidian"]
+    
+    for nombre in posibles_boveda:
+        candidato = directorio_actual / nombre
+        if candidato.exists() and candidato.is_dir():
+            # Verificar que tiene archivos .md o .obsidian
+            archivos_md = list(candidato.glob("**/*.md"))[:5]
+            tiene_obsidian = (candidato / ".obsidian").exists()
+            if archivos_md or tiene_obsidian:
+                print(f"[+] Bóveda encontrada: {candidato}")
+                env_file = candidato / ".guardian_env"
+                config_local = {"linux_path" if sistema == "linux" else "windows_path": str(candidato)}
+                try:
+                    with open(env_file, 'w', encoding='utf-8') as f:
+                        json.dump(config_local, f, indent=4)
+                except: pass
+                return str(candidato)
+    
+    # Último recurso: usar el directorio del script
+    script_dir = Path(__file__).parent.resolve()
+    print(f"[!] Usando directorio del script: {script_dir}")
+    return str(script_dir)
 
 # --- SOPORTE MULTIPLATAFORMA DE PROTOCOLOS DE RED ---
 try:
@@ -97,13 +171,13 @@ def cargar_criterios_desde_obsidian(vault_path):
 
 # --- GESTOR DE ENTORNO PORTABLE (JSON CONFIG) ---
 def gestionar_config_json():
-    """Garantiza la existencia del config.json para la persistencia del demonio."""
+    """Garantiza la existencia del config.json y detecta la ruta correcta por plataforma."""
     if not CONFIG_FILE.exists():
         # Intentar auto-detectar si hay una carpeta de Obsidian al lado del script
         boveda_sugerida = DIRECTORIO_ACTUAL / "Mobil01"
         if not boveda_sugerida.exists():
             boveda_sugerida = DIRECTORIO_ACTUAL
-            
+        
         print(f"[!] Archivo config.json no detectado.")
         ruta_boveda = input(f"[?] Introduce la ruta de tu bóveda [Por defecto: {boveda_sugerida}]: ").strip()
         if not ruta_boveda:
@@ -117,7 +191,12 @@ def gestionar_config_json():
             json.dump(config_data, f, indent=4, ensure_ascii=False)
     
     try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f: return json.load(f)
+        config = json.load(open(CONFIG_FILE, 'r', encoding='utf-8'))
+        # Aplicar detección multiplataforma si existe .guardian_env
+        vault_path_raw = config.get("vault_path", "")
+        if vault_path_raw:
+            config["vault_path"] = detectar_entorno_y_ruta(vault_path_raw)
+        return config
     except: return None
 # --- MÓDULO REMOTO (GDRIVE & SFTP) ---
 def inicializar_entorno_remoto():
@@ -298,11 +377,22 @@ def actualizar_interfaz_historial(vault_path, ruta_nota, tipo_evento, tags, orig
         contenido_h = antes_j + "\n" + json_render + "\n" + despues_j
 
     # Escritura física y definitiva en el disco
+    # Backup automático antes de escribir
+    if nota_historial.exists():
+        try:
+            shutil.copy2(nota_historial, str(nota_historial) + ".bak")
+        except: pass
     try:
         with open(nota_historial, 'w', encoding='utf-8') as f:
             f.write(contenido_h)
     except Exception as e:
         print(f"[-] Fallo crítico de escritura en disco: {e}")
+        
+        # Restaurar backup si falló la escritura
+        bak_file = str(nota_historial) + ".bak"
+        if os.path.exists(bak_file):
+            shutil.copy2(bak_file, nota_historial)
+            print(f"[✓] Backup restaurado automáticamente.")
 # --- PROCESAMIENTO ATÓMICO NO DESTRUCTIVO ---
 def clasificar_y_enlazar_nota(ruta, vault_path, diccionario_titulos, criterios, notas_excluidas, modo_origen="LOCAL", evento="Modificación"):
     if os.path.islink(ruta): return False
@@ -382,7 +472,7 @@ def clasificar_y_enlazar_nota(ruta, vault_path, diccionario_titulos, criterios, 
         if 'temp_name' in locals() and os.path.exists(temp_name): os.unlink(temp_name)
         return False
 
-def escanear_total(path, creds=None, primer_lanzamiento=False):
+def escanear_total(path, creds=None, primer_lanzamiento=False, dry_run=False):
     if creds: sincronizar_remoto_a_local(creds)
     criterios, notas_excluidas = cargar_criterios_desde_obsidian(path)
     diccionario_titulos = obtener_diccionario_notas(path)
@@ -392,7 +482,8 @@ def escanear_total(path, creds=None, primer_lanzamiento=False):
     total_procesados = 0
     total_registrados = 0
 
-    print("[*] Guardián inspeccionando el sistema de archivos...")
+    modo_texto = "[SIMULACION]" if dry_run else ""
+    print(f"[*] {modo_texto} Guardian inspeccionando el sistema de archivos...", flush=True)
 
     for raiz, dirs, archivos in os.walk(path):
         dirs[:] = [d for d in dirs if d not in IGNORAR_CARPETAS]
@@ -402,14 +493,22 @@ def escanear_total(path, creds=None, primer_lanzamiento=False):
                 ruta_c = os.path.join(raiz, arc)
                 
                 modo = creds["tipo"].upper() if creds else "LOCAL"
-                if clasificar_y_enlazar_nota(ruta_c, path, diccionario_titulos, criterios, notas_excluidas, modo, evento):
+                resultado = clasificar_y_enlazar_nota(ruta_c, path, diccionario_titulos, criterios, notas_excluidas, modo, evento)
+                if resultado:
                     total_registrados += 1
-                    if creds: subir_cambios_a_remoto(ruta_c, arc, creds)
+                    if dry_run:
+                        print(f"    [DRY-RUN] [>] {arc} | Seria modificado", flush=True)
+                    elif creds: 
+                        subir_cambios_a_remoto(ruta_c, arc, creds)
+                if dry_run:
+                    estado = "[>] Modificado" if resultado else "[=] Sin cambios"
+                    print(f"    [DRY-RUN] {estado}: {arc}", flush=True)
 
-    # Despliegue de métricas vivas en tu terminal de PowerShell
-    print(f"[+] Análisis completado con éxito.")
-    print(f"[*] Total de archivos .md inspeccionados: {total_procesados}")
-    print(f"[*] Total de archivos modificados/registrados en historial: {total_registrados}")
+        # Despliegue de metricas vivas en tu terminal
+    print(f"[+] {modo_texto} Analisis completado con exito.", flush=True)
+    print(f"[*] {modo_texto} Total de archivos .md inspeccionados: {total_procesados}", flush=True)
+    print(f"[*] {modo_texto} Total de archivos modificados/registrados en historial: {total_registrados}", flush=True)
+    print("[+] Escaneo atomico finalizado.", flush=True)
 
 # --- WATCHDOG / POLLING COUPLING ---
 if HAS_WATCHDOG:
@@ -505,7 +604,8 @@ if __name__ == "__main__":
     print("1) Arrancar Guardián Oculto (Primer Lanzamiento + Fondo)")
     print("2) Detener Guardián por Completo")
     print("3) Solo Escaneo Inmediato")
-    op = input("Selecciona [1-3]: ").strip()
+    print("4) Simular Escaneo (Dry-Run - Sin escribir nada)")
+    op = input("Selecciona [1-4]: ").strip()
     
     if op == "1":
         config = gestionar_config_json()
@@ -523,6 +623,12 @@ if __name__ == "__main__":
         if config:
             path = os.path.normpath(config.get("vault_path", ""))
             escanear_total(path)
+    elif op == "4":
+        config = gestionar_config_json()
+        if config:
+            path = os.path.normpath(config.get("vault_path", ""))
+            print("[*] Modo SIMULACIÓN activado - No se escribirá nada en disco.")
+            escanear_total(path, dry_run=True)
             print("[+] Escaneo atómico finalizado.")
     else:
         print("[-] Opción inválida.")
