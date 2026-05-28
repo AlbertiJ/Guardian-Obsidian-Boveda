@@ -1,0 +1,10 @@
+config.json
+token.json
+credentials.json
+registro_clasificaciones.json
+*.tmp
+temp_name
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
