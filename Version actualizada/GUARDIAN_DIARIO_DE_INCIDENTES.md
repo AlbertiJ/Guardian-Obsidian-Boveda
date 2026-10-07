@@ -22,7 +22,7 @@ El script reportaba "0 archivos .md inspeccionados" al ejecutar cualquier opció
 ### Diagnóstico
 El archivo `config.json` contenía una ruta de Linux:
 ```json
-"vault_path": "/home/usuario/MiBoveda"
+"vault_path": "/home/<usuario>/MiBoveda"
 ```
 
 Esta ruta no existe en Windows, por lo que el script buscaba en el lugar equivocado.
@@ -30,7 +30,7 @@ Esta ruta no existe en Windows, por lo que el script buscaba en el lugar equivoc
 ### Solución
 Actualicé manualmente `config.json` con la ruta correcta de Windows:
 ```json
-"vault_path": "C:\\Users\\usuario\\MiBoveda"
+"vault_path": "C:\\Users\\<usuario>\\MiBoveda"
 ```
 
 ### Prevención

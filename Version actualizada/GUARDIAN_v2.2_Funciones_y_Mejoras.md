@@ -65,8 +65,8 @@ Registra todas las modificaciones en `Historial/Historial-de-Boveda.md` con:
 El script detecta automáticamente el sistema operativo y gestiona rutas distintas para Windows y Linux mediante el archivo `.guardian_env`.
 
 ```
-Windows: C:\Users\...\Bovedamobil01\Mobil01
-Linux:   /home/.../Bovedamobil01/Mobil01
+Windows: C:\Users\<usuario>\MiBoveda
+Linux:   /home/<usuario>/MiBoveda
 ```
 
 ### Auto-Detección de Bóveda
