@@ -8,6 +8,7 @@ import tempfile
 import subprocess
 import shutil
 import platform
+import signal
 import warnings
 from pathlib import Path
 from datetime import datetime
@@ -138,9 +139,14 @@ def limpiar_procesos_anteriores():
         cmd_kill = f"Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%{mi_nombre}%' AND ProcessId <> {os.getpid()}\" | Remove-CimInstance"
         subprocess.run(["powershell", "-Command", cmd_kill], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
-        # Comando nativo UNIX excluyendo nuestro propio PID actual
-        cmd_pkill = f"pkill -f '{mi_nombre}'"
-        subprocess.run(f"pgrep -f '{mi_nombre}' | grep -v {os.getpid()} | xargs kill -9", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # UNIX sin shell: se buscan los PID con pgrep y se excluye el propio
+        res = subprocess.run(["pgrep", "-f", re.escape(mi_nombre)], capture_output=True, text=True)
+        for pid in res.stdout.split():
+            if pid.isdigit() and int(pid) != os.getpid():
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except OSError:
+                    pass
 
 # --- LECTOR DINÁMICO DE CONFIGURACIÓN MARKDOWN ---
 def cargar_criterios_desde_obsidian(vault_path):

@@ -18,8 +18,9 @@ def limpiar_procesos_anteriores():
     print("[*] Limpiando procesos fantasmas en segundo plano...")
     if sys.platform == "win32":
         # Mata procesos de python que estén ejecutando nuestro script específico
-        subprocess.run('wmic process where "commandline like \'%guardian_vault_final.py%\'" delete', 
-                       shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # sin shell y sin wmic (esta en desuso): PowerShell con el filtro como argumento
+        cmd = "Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%guardian_vault_final.py%'\" | Remove-CimInstance"
+        subprocess.run(["powershell", "-NoProfile", "-Command", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         # Comando nativo para Linux/macOS
         subprocess.run(["pkill", "-f", "guardian_vault_final.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
