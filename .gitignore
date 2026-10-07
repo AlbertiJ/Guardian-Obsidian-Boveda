@@ -4,3 +4,11 @@ echo credentials.json >> .gitignore
 echo registro_clasificaciones.json >> .gitignore
 
 subir_repositorio.ps1
+
+# Secretos y datos locales (no subir nunca)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.session
